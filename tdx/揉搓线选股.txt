@@ -1,0 +1,52 @@
+{揉搓线选股 V1.0}
+{形态：第1天长上影线 + 第2天长下影线 + 缩量 + 趋势向上}
+
+{严格涨停判断}
+P:=(C-REF(C,1))/REF(C,1)*100;
+LR:=IF(NAMELIKE('ST') OR NAMELIKE('*ST'), 0.05, IF(CODELIKE('300') OR CODELIKE('301') OR CODELIKE('688') OR CODELIKE('689'), 0.2, 0.1));
+LP:=INTPART(REF(C,1)*(1+LR)*100+0.5)/100;
+ZT:=ABS(C-LP)<=0.01;
+DT:=ABS(C-INTPART(REF(C,1)*(1-LR)*100+0.5)/100)<=0.01;
+
+{排除ST和涨跌停}
+NST:=NOT(NAMELIKE('ST') OR NAMELIKE('*ST') OR ZT OR DT);
+
+{=== 第1天（昨天）：长上影线 ===}
+O1:=REF(O,1); H1:=REF(H,1); L1:=REF(L,1); C1:=REF(C,1);
+AMP1:=H1-L1;
+UPSHADOW1:=H1-MAX(O1,C1);
+BODY1:=ABS(C1-O1);
+{上影线占比≥60%，实体占比≤20%}
+UP1:=AMP1>0 AND UPSHADOW1/AMP1>=0.60 AND BODY1/AMP1<=0.20;
+
+{=== 第2天（今天）：长下影线 ===}
+O2:=O; H2:=H; L2:=L; C2:=C;
+AMP2:=H2-L2;
+DNSHADOW2:=MIN(O2,C2)-L2;
+BODY2:=ABS(C2-O2);
+{下影线占比≥60%，实体占比≤20%}
+DN2:=AMP2>0 AND DNSHADOW2/AMP2>=0.60 AND BODY2/AMP2<=0.20;
+
+{=== 成交量配合 ===}
+V1:=REF(VOL,1);
+V2:=VOL;
+V5:=MA(VOL,5);
+{第2天缩量：成交量≤第1天的80%，且不超过5日均量的1.5倍}
+VOL_OK:=V2<=V1*0.80 AND V2<=V5*1.5;
+
+{=== 趋势判断 ===}
+M5:=MA(C,5); M10:=MA(C,10); M20:=MA(C,20); M60:=MA(C,60);
+{优先：均线多头排列}
+TREND1:=M5>M10 AND M10>M20 AND M20>M60 AND C>M5;
+{次选：近10天有涨停}
+TREND2:=COUNT(REF(ZT,1),10)>=1;
+{趋势条件满足其一}
+TREND_OK:=TREND1 OR TREND2;
+
+{=== 高位排除 ===}
+{20日涨幅不超过50%}
+GAIN20:=(C-REF(C,20))/REF(C,20)*100;
+NOT_HIGH:=GAIN20<50;
+
+{=== 综合选股 ===}
+NST AND UP1 AND DN2 AND VOL_OK AND TREND_OK AND NOT_HIGH;

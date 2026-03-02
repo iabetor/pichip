@@ -1,0 +1,130 @@
+{主力控盘指数 V2.0 - 通达信公式版}
+
+{===============================================
+  主力控盘指数 V2.0
+  
+  核心改进：同时识别两种控盘模式
+  1. 吸筹暗控：缩量不跌、缩量上涨（锁筹）
+  2. 拉升明控：放量大涨、涨停（主力出击）
+  
+  四个子指标：
+  1. 量价控盘（35%）- 缩量锁筹+放量拉升
+  2. 趋势强度（25%）- 涨幅+均线+新高
+  3. 抗跌超额（20%）- 大盘跌时抗跌+超额收益
+  4. 资金持续（20%）- 连涨+量能趋势+换手活跃
+  
+  使用方法：复制到通达信公式编辑器，创建副图指标
+===============================================}
+
+{=== 基础变量 ===}
+HS:=VOL/CAPITAL*100;          {换手率%}
+HS5:=MA(HS,5);                {5日均换手率}
+V5:=MA(VOL,5);                {5日均量}
+PCT:=(C-REF(C,1))/REF(C,1)*100;  {日涨跌幅%}
+IC:=INDEXC;                    {大盘收盘价}
+IPCT:=(IC-REF(IC,1))/REF(IC,1)*100;  {大盘日涨跌幅}
+
+{=== 1. 量价控盘 (权重35%) ===}
+
+{A. 缩量控盘（暗控）：缩量不跌/缩量上涨 = 筹码锁定}
+SHR:=VOL<V5*0.8;              {缩量判断}
+SU:=COUNT(SHR AND PCT>0.3, 20);     {缩量上涨天数}
+SND:=COUNT(SHR AND PCT>-0.3, 20);   {缩量不跌天数}
+DARK:=SU*4+SND*1.5;           {暗控得分}
+
+{B. 放量拉升（明控）：放量大涨/涨停 = 主力出击}
+BIG_UP:=COUNT(PCT>3 AND VOL>V5*1.2, 20);  {放量大涨天数}
+LIMIT:=COUNT(PCT>9.5, 20);                 {涨停天数}
+SURGE:=BIG_UP*8+LIMIT*15;     {明控得分}
+
+{C. 负面信号：放量滞涨/放量下跌 = 出货嫌疑}
+BAD:=COUNT(VOL>V5*1.3 AND PCT<0.3, 20)*3 + COUNT(VOL>V5*1.3 AND PCT<-1, 20)*5;
+
+{综合量价得分}
+VP:=MAX(0,MIN(100,(DARK+SURGE-BAD)/20*100));
+
+{=== 2. 趋势强度 (权重25%) ===}
+{20日涨幅}
+RET20:=(C/REF(C,20)-1)*100;
+
+{均线多头排列加分}
+MA5V:=MA(C,5);
+MA10V:=MA(C,10);
+MA20V:=MA(C,20);
+BULL:=IF(MA5V>MA10V AND MA10V>MA20V, 20, IF(MA5V>MA10V, 10, 0));
+
+{近期创新高加分}
+HH:=IF(C>=HHV(H,20), 15, IF(C>=HHV(H,20)*0.97, 8, 0));
+
+{趋势综合得分}
+TS:=MIN(100, MAX(0, IF(RET20>=30, 100,
+    IF(RET20>=15, 80,
+    IF(RET20>=5, 60,
+    IF(RET20>=0, 40,
+    IF(RET20>=-5, 25, 10))))) + BULL + HH));
+
+{=== 3. 抗跌性+超额收益 (权重20%) ===}
+{大盘下跌日统计}
+ID:=IPCT<-0.5;
+DD:=COUNT(ID, 20);
+DA:=SUM(IF(ID, PCT, 0), 20)/MAX(1, DD);
+
+{抗跌得分}
+RS:=IF(DD<3, 50,
+    IF(DA>=1, 100,
+    IF(DA>=0.5, 80,
+    IF(DA>=0, 65,
+    IF(DA>=-0.5, 40,
+    IF(DA>=-1, 20, 0))))));
+
+{超额收益}
+IRET:=(IC/REF(IC,20)-1)*100;
+EX:=RET20-IRET;
+EB:=IF(EX>=15, 30,
+    IF(EX>=8, 20,
+    IF(EX>=3, 10,
+    IF(EX>=0, 5,
+    IF(EX>=-5, 0, -10)))));
+
+RE:=MAX(0, MIN(100, RS+EB));
+
+{=== 4. 资金持续性 (权重20%) ===}
+{近10日上涨天数}
+CUP:=COUNT(PCT>0, 10);
+CB:=IF(CUP>=7, 40, IF(CUP>=5, 30, IF(CUP>=4, 20, IF(CUP>=3, 10, 0))));
+
+{量能趋势：近3日均量/近10日均量}
+VTREND:=MA(VOL,3)/MA(VOL,10);
+VB:=IF(VTREND>=1.5, 20, IF(VTREND>=1.2, 10, 0));
+
+{换手率活跃度}
+HSB:=IF(HS5>=8, 20, IF(HS5>=5, 15, IF(HS5>=3, 10, IF(HS5>=1.5, 5, 0))));
+
+{资金持续得分}
+MF:=MAX(0, MIN(100, CB+VB+HSB));
+
+{=== 5. 综合控盘指数 ===}
+{量价控盘35% + 趋势强度25% + 抗跌超额20% + 资金持续20%}
+CONTROL_INDEX:=VP*0.35 + TS*0.25 + RE*0.20 + MF*0.20;
+
+{=== 输出显示 ===}
+控盘指数:CONTROL_INDEX, NODRAW;
+
+{绘制柱状图}
+STICKLINE(CONTROL_INDEX>=60, 0, CONTROL_INDEX, 3, 0), COLORRED;
+STICKLINE(CONTROL_INDEX>=40 AND CONTROL_INDEX<60, 0, CONTROL_INDEX, 3, 0), COLORYELLOW;
+STICKLINE(CONTROL_INDEX<40, 0, CONTROL_INDEX, 3, 0), COLORGREEN;
+
+{参考线}
+高控盘:80, COLORRED, DOTLINE;
+中高控盘:60, COLORYELLOW, DOTLINE;
+
+{信号}
+DRAWICON(CROSS(CONTROL_INDEX, 60), CONTROL_INDEX, 1);
+DRAWICON(CROSS(60, CONTROL_INDEX), CONTROL_INDEX, 2);
+
+{子指标输出（可选）}
+量价:VP, NODRAW, COLORCYAN;
+趋势:TS, NODRAW, COLORMAGENTA;
+抗跌:RE, NODRAW, COLORGREEN;
+资金:MF, NODRAW, COLORYELLOW;

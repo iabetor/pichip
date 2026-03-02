@@ -1,0 +1,24 @@
+{MACD四色 - 严格按TradingView标准实现}
+{只有柱子，4色区分力度：深绿=多头加速，浅绿=多头衰减，浅红=空头衰减，深红=空头加速}
+
+DIFF:=EMA(CLOSE,12)-EMA(CLOSE,26);
+DEA:=EMA(DIFF,9);
+M:=(DIFF-DEA);
+
+{零轴}
+零轴:0,COLORGRAY,DOTLINE;
+
+{TradingView原版颜色（注意通达信是BGR顺序）：}
+{col_grow_above #26A69A → BGR=9AA626 深绿/青绿}
+{col_fall_above #B2DFDB → BGR=DBDFB2 浅绿}
+{col_grow_below #FFCDD2 → BGR=D2CDFF 浅红/粉}
+{col_fall_below #FF5252 → BGR=5252FF 深红}
+
+{柱子>0 且在增大=多头加速（深绿/青绿）}
+STICKLINE(M>=0 AND M>=REF(M,1),0,M,-1,0),COLOR9AA626;
+{柱子>0 且在缩小=多头衰减（浅绿）}
+STICKLINE(M>=0 AND M<REF(M,1),0,M,-1,0),COLORDBDFB2;
+{柱子<0 且在缩小（绝对值减小）=空头衰减（浅红/粉）}
+STICKLINE(M<0 AND M>=REF(M,1),0,M,-1,0),COLORD2CDFF;
+{柱子<0 且在增大（绝对值增大）=空头加速（深红）}
+STICKLINE(M<0 AND M<REF(M,1),0,M,-1,0),COLOR5252FF;

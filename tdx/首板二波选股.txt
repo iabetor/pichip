@@ -1,0 +1,50 @@
+{首板二波选股 V1.0}
+{形态：涨停→断板→不破断板低点→缩量两阳}
+
+{严格涨停判断}
+P:=(C-REF(C,1))/REF(C,1)*100;
+LR:=IF(NAMELIKE('ST') OR NAMELIKE('*ST'), 0.05, IF(CODELIKE('300') OR CODELIKE('301') OR CODELIKE('688') OR CODELIKE('689'), 0.2, 0.1));
+LP:=INTPART(REF(C,1)*(1+LR)*100+0.5)/100;
+ZT:=ABS(C-LP)<=0.01;
+
+{排除ST}
+NST:=NOT(NAMELIKE('ST') OR NAMELIKE('*ST'));
+
+{=== 找最近的涨停位置（1-10天前） ===}
+ZT_POS:=IF(REF(ZT,1),1,IF(REF(ZT,2),2,IF(REF(ZT,3),3,IF(REF(ZT,4),4,
+         IF(REF(ZT,5),5,IF(REF(ZT,6),6,IF(REF(ZT,7),7,IF(REF(ZT,8),8,
+         IF(REF(ZT,9),9,IF(REF(ZT,10),10,0))))))))));
+
+{必须有涨停}
+HAS_ZT:=ZT_POS>0;
+
+{=== 断板低点：涨停后那天的最低价 ===}
+{涨停后1天的最低价}
+DB_L:=IF(ZT_POS=1,REF(L,1),IF(ZT_POS=2,REF(L,2),IF(ZT_POS=3,REF(L,3),
+       IF(ZT_POS=4,REF(L,4),IF(ZT_POS=5,REF(L,5),IF(ZT_POS=6,REF(L,6),
+       IF(ZT_POS=7,REF(L,7),IF(ZT_POS=8,REF(L,8),IF(ZT_POS=9,REF(L,9),
+       IF(ZT_POS=10,REF(L,10),0))))))))));
+
+{=== 支撑不破：断板后至今的最低价≥断板低点 ===}
+{从断板后到现在的最低价}
+SUPPORT_OK:=LLV(L,ZT_POS)>=DB_L*0.98;
+
+{=== 缩量小阳判断 ===}
+V5:=MA(VOL,5);
+{缩量：成交量<5日均量的85%}
+SHRINK:=VOL<V5*0.85;
+{小阳：收盘≥开盘，涨幅0%-3%}
+YANG:=C>=O AND P>=0 AND P<3;
+{上影线短：上影线<实体的70%}
+USHADOW:=H-MAX(O,C);
+BODY:=ABS(C-O);
+NO_DIV:=BODY>0.01 AND USHADOW/BODY<0.70;
+{缩量小阳}
+SY:=SHRINK AND YANG AND (NO_DIV OR BODY<0.01);
+
+{=== 最近2天内至少有2根缩量小阳 ===}
+SY_COUNT:=SY + REF(SY,1);
+SY_OK:=SY_COUNT>=2;
+
+{=== 综合选股 ===}
+NST AND HAS_ZT AND SUPPORT_OK AND SY_OK;

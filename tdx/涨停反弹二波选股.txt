@@ -1,0 +1,54 @@
+{涨停反弹二波选股 V2.1}
+{严格版本：固定窗口近似判断}
+P:=(C-REF(C,1))/REF(C,1)*100;
+M5:=MA(C,5);M10:=MA(C,10);M20:=MA(C,20);M120:=MA(C,120);
+
+{严格涨停判断}
+LR:=IF(NAMELIKE('ST') OR NAMELIKE('*ST'), 0.05, IF(CODELIKE('300') OR CODELIKE('301') OR CODELIKE('688') OR CODELIKE('689'), 0.2, 0.1));
+LP:=INTPART(REF(C,1)*(1+LR)*100+0.5)/100;
+ZT:=ABS(C-LP)<=0.01;
+
+{排除ST股}
+NST:=NOT(NAMELIKE('ST') OR NAMELIKE('*ST'));
+
+{Step1: 反弹涨停在2-5天前（涨停后震荡2-5天）}
+{第2-5天前必须有涨停，当天不能涨停}
+RZT:=(REF(ZT,2) OR REF(ZT,3) OR REF(ZT,4) OR REF(ZT,5)) AND NOT(ZT);
+
+{Step2: 首次涨停在反弹涨停前6-18天}
+{从第7天往前看18天内必须有涨停（排除反弹涨停那几天）}
+FZT:=COUNT(ZT,20)-COUNT(ZT,6)>=1;
+
+{Step3: 第二段震荡天数（反弹涨停后到现在）}
+{如果REF(ZT,2)则震荡2天，REF(ZT,3)则震荡3天...以此类推}
+SHK_DAYS:=IF(REF(ZT,2),2,IF(REF(ZT,3),3,IF(REF(ZT,4),4,IF(REF(ZT,5),5,0))));
+SHK_OK:=SHK_DAYS>=2 AND SHK_DAYS<=5;
+
+{Step4: 第二段震荡回撤1%-5%}
+{从反弹涨停收盘价回撤}
+RB_H:=IF(REF(ZT,2),REF(C,2),IF(REF(ZT,3),REF(C,3),IF(REF(ZT,4),REF(C,4),IF(REF(ZT,5),REF(C,5),0))));
+SHK_L:=IF(REF(ZT,2),LLV(L,2),IF(REF(ZT,3),LLV(L,3),IF(REF(ZT,4),LLV(L,4),IF(REF(ZT,5),LLV(L,5),0))));
+DD2:=IF(RB_H>0,(RB_H-SHK_L)/RB_H*100,0);
+DD_OK:=DD2>=1 AND DD2<=5;
+
+{Step5: 震荡期间无跌停}
+DD_TH:=IF(LR=0.05,-5,IF(LR=0.2,-20,-10));
+NZD:=COUNT(P<DD_TH,5)=0;
+
+{Step6: MACD金叉}
+DIF:=EMA(C,12)-EMA(C,26);
+DEA:=EMA(DIF,9);
+MG:=DIF>DEA;
+
+{Step7: 均线多头+股价在120日线上}
+UP:=M5>M10 AND M10>M20 AND C>M120;
+
+{Step8: 距反弹涨停价不超过10%（还有上涨空间）}
+DH:=IF(RB_H>0,(RB_H-C)/RB_H*100,100);
+DH_OK:=DH>0 AND DH<=10;
+
+{Step9: 当天涨幅不能太大（避免已经大涨）}
+PT:=P<5;
+
+{综合选股}
+NST AND RZT AND FZT AND SHK_OK AND DD_OK AND NZD AND MG AND UP AND DH_OK AND PT;

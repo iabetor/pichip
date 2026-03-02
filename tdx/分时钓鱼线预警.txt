@@ -1,0 +1,47 @@
+{分时钓鱼线预警 V1.0}
+{用于分时图副图，实时监控早盘拉高出货陷阱}
+
+{=== 实时数据 ===}
+现价:=DYNAINFO(7);
+今开:=DYNAINFO(4);
+最高:=DYNAINFO(5);
+最低:=DYNAINFO(6);
+量比:=DYNAINFO(17);
+涨幅:=DYNAINFO(14)*100;
+昨收:=DYNAINFO(3);
+
+{=== 早盘涨幅追踪 ===}
+早高幅:=(最高-昨收)/昨收*100;
+回落幅:=(最高-现价)/昨收*100;
+振幅:=(最高-最低)/昨收*100;
+
+{=== 钓鱼线特征检测 ===}
+拉高:=早高幅>5;
+跳水:=回落幅>3 AND 涨幅<2;
+高开低走:=今开>昨收*1.02 AND 现价<今开;
+放量:=量比>2;
+
+{=== 综合风险评分（一次性计算）===}
+F1:=IF(拉高 AND 跳水,70,0);
+F2:=IF(高开低走 AND 放量,20,0);
+F3:=IF(振幅>10,10,0);
+风险:F1+F2+F3,NODRAW;
+
+{柱状图显示}
+STICKLINE(风险>=70,0,风险,3,0),COLORMAGENTA;
+STICKLINE(风险>=40 AND 风险<70,0,风险,3,0),COLORYELLOW;
+STICKLINE(风险<40,0,风险,3,0),COLORGREEN;
+
+{参考线}
+高危:70,COLORMAGENTA,DOTLINE;
+警戒:40,COLORYELLOW,DOTLINE;
+
+{文字预警}
+DRAWTEXT(CROSS(风险,70),风险,'钓鱼'),COLORMAGENTA;
+DRAWTEXT(CROSS(风险,40) AND 风险<70,风险,'警惕'),COLORYELLOW;
+
+{实时信息显示}
+涨幅显示:涨幅,NODRAW,COLORWHITE;
+早高:早高幅,NODRAW,COLORRED;
+回落:回落幅,NODRAW,COLORCYAN;
+量比显示:量比,NODRAW,COLORWHITE;

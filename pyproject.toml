@@ -1,0 +1,25 @@
+[project]
+name = "pichip"
+version = "0.1.0"
+description = "K线形态相似度匹配工具 - 精确匹配全A股历史K线形态"
+requires-python = ">=3.9"
+dependencies = [
+    "akshare>=1.14.0",
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "fastdtw>=0.3.4",
+    "scipy>=1.10.0",
+    "mplfinance>=0.12.10",
+    "rich>=13.0.0",
+    "apscheduler>=3.10.0",
+    "pyyaml>=6.0",
+    "streamlit>=1.30.0",
+    "plotly>=5.18.0",
+]
+
+[project.scripts]
+pichip = "pichip.cli:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
