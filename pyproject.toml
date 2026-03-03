@@ -9,7 +9,7 @@ dependencies = [
     "pandas>=2.0.0",
     "fastdtw>=0.3.4",
     "scipy>=1.10.0",
-    "mplfinance>=0.12.10",
+    "mplfinance>=0.12",
     "rich>=13.0.0",
     "apscheduler>=3.10.0",
     "pyyaml>=6.0",
@@ -23,3 +23,7 @@ pichip = "pichip.cli:main"
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pichip", "tdx"]
