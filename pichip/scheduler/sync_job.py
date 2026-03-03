@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from ..data.cache import CacheDB
-from ..data.fetcher import sync_all_stocks
+from ..data.fetcher import sync_all_stocks, sync_intraday_data
 
 logger = logging.getLogger(__name__)
 
@@ -73,4 +73,27 @@ def sync_full_job(years: int = 3) -> dict:
         return result
     except Exception as e:
         logger.error(f"全量同步失败: {e}")
+        return {"status": "failed", "error": str(e)}
+
+
+def sync_intraday_job() -> dict:
+    """盘中同步任务（中午复盘用）
+    
+    使用 akshare 实时行情接口同步当日数据
+    
+    Returns:
+        同步结果统计
+    """
+    logger.info("开始盘中同步")
+    start_time = datetime.now()
+    
+    cache = CacheDB()
+    
+    try:
+        result = sync_intraday_data(cache)
+        result["elapsed"] = (datetime.now() - start_time).seconds
+        logger.info(f"盘中同步完成: {result}")
+        return result
+    except Exception as e:
+        logger.error(f"盘中同步失败: {e}")
         return {"status": "failed", "error": str(e)}

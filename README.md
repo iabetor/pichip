@@ -58,6 +58,13 @@ pichip sync
 # 仅同步今日数据（收盘后使用，速度快）
 pichip sync --today
 
+# 中午同步（同步盘中实时数据，用于中午复盘）
+pichip sync --intraday
+
+# 中午同步指定股票
+pichip sync --intraday --stock 603912
+pichip sync --intraday --stock 603912,002837
+
 # 指定时间范围
 pichip sync --start-date 20230101 --end-date 20240222
 ```
@@ -353,6 +360,78 @@ pichip control --sync-holder
 pichip control --sync-index
 ```
 
+### 11. 健康回踩扫描
+
+扫描涨停/大阳后健康回踩的股票，寻找缩量回调后的买入机会：
+
+```bash
+# 健康回踩选股（默认参数）
+pichip scan pullback
+
+# 指定参数
+pichip scan pullback --days-back 5 --max-pullback 5 --min-volume-shrink 0.65
+
+# 严格模式：只看站稳MA5的
+pichip scan pullback --strict
+
+# 只选热门板块股票
+pichip scan pullback --hot-sector --min-hot-score 30
+
+# 包含ST股票
+pichip scan pullback --include-st
+
+# 最低评分过滤
+pichip scan pullback --min-score 80 --top-n 20
+```
+
+**识别条件**：
+- **涨停/大阳**：近N天内出现涨停或大阳（主板≥7%，创业板≥12%）
+- **健康回踩**：涨停后回踩2-5天，幅度≤5%
+- **缩量**：回踩期间成交量萎缩（默认萎缩≥35%）
+- **站稳均线**：回踩期间站稳MA5（可选严格模式）
+
+**评分模型（100分制）**：
+
+| 维度 | 分值 | 说明 |
+|------|------|------|
+| 回踩幅度 | 30分 | 小幅回踩(-1%~+1%)得分最高 |
+| 缩量程度 | 30分 | 缩量越多得分越高 |
+| MA5支撑 | 20分 | 站稳MA5得分 |
+| 涨停质量 | 20分 | 涨停日换手率适中得分高 |
+
+### 12. 背离扫描
+
+扫描全市场的MACD背离信号（顶背离/底背离）：
+
+```bash
+# 扫描全部背离信号
+pichip divergence
+
+# 只扫描底背离（买入信号）
+pichip divergence --type bottom
+
+# 只扫描顶背离（卖出信号）
+pichip divergence --type top
+
+# 指定日期范围
+pichip divergence --days-back 30
+
+# 最低评分过滤
+pichip divergence --min-score 60 --top-n 30
+```
+
+**背离类型**：
+- **底背离**：价格创新低，但MACD柱子没创新低 → 潜在买入信号
+- **顶背离**：价格创新高，但MACD柱子没创新高 → 潜在卖出信号
+
+**评分模型（100分制）**：
+
+| 维度 | 分值 | 说明 |
+|------|------|------|
+| 背离强度 | 40分 | 价格与MACD背离程度越大得分越高 |
+| 背离位置 | 30分 | 底背离在低位得分高，顶背离在高位得分高 |
+| 确认信号 | 30分 | 是否有K线形态确认（如金叉/死叉） |
+
 ## 配置文件
 
 配置文件 `config.yaml` 位于项目根目录：
@@ -401,6 +480,11 @@ llm:
 | `pichip history` | 查看匹配历史 |
 | `pichip scheduler` | 定时任务管理 |
 | `pichip chat` | 自然语言交互 |
+| `pichip lhb` | 龙虎榜查询 |
+| `pichip hot` | 热榜股票筛选 |
+| `pichip control` | 主力控盘指数分析 |
+| `pichip scan pullback` | 健康回踩扫描 |
+| `pichip divergence` | MACD背离扫描 |
 
 ### match 命令参数
 

@@ -1,8 +1,17 @@
-"""分析模块"""
+"""股票分析模块"""
 
-from .regression import PatternAnalyzer, AnalysisResult
+from .bottom_analysis import (
+    analyze_bottom,
+    compare_stocks,
+    print_comparison,
+    get_recommendation,
+    BottomAnalysisResult,
+)
 
 __all__ = [
-    "PatternAnalyzer",
-    "AnalysisResult",
+    'analyze_bottom',
+    'compare_stocks',
+    'print_comparison',
+    'get_recommendation',
+    'BottomAnalysisResult',
 ]

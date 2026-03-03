@@ -1,5 +1,6 @@
 """数据获取模块 - 支持 tushare(优先) 和 akshare(兜底)"""
 
+import logging
 import time
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -821,3 +822,201 @@ def get_index_history(index_code: str = "000001", start_date: str = None, end_da
         return df[["date", "open", "close", "high", "low", "volume"]]
     except Exception:
         return pd.DataFrame()
+
+
+# ─────────────────────────────────────────────────────────────────
+# 盘中实时数据同步（用于中午复盘）
+# ─────────────────────────────────────────────────────────────────
+
+def sync_intraday_data(cache: CacheDB, stock_codes: Optional[List[str]] = None) -> dict:
+    """同步盘中实时数据（用于中午复盘）
+    
+    优先使用新浪实时行情接口（更稳定），失败后尝试东方财富接口。
+    
+    Args:
+        cache: 缓存数据库实例
+        stock_codes: 可选，指定股票代码列表。如 ["002837", "000001"]。
+                     如果为 None，同步全市场数据。
+        
+    Returns:
+        同步结果统计
+    """
+    import requests
+    from datetime import datetime
+    
+    logger = logging.getLogger(__name__)
+    today = datetime.now().strftime("%Y-%m-%d")
+    
+    try:
+        if stock_codes:
+            console.print(f"[bold]获取指定股票盘中实时数据 ({len(stock_codes)} 只)...[/]")
+            # 使用新浪接口（更稳定）
+            return _sync_intraday_sina(cache, stock_codes, today)
+        else:
+            console.print("[bold]获取全市场盘中实时数据...[/]")
+            # 全市场用东方财富（一次请求全部）
+            return _sync_intraday_em(cache, today)
+            
+    except Exception as e:
+        logger.error(f"盘中同步失败: {e}")
+        return {"status": "failed", "error": str(e)}
+
+
+def _sync_intraday_sina(cache: CacheDB, stock_codes: List[str], today: str) -> dict:
+    """使用新浪接口同步指定股票的实时数据"""
+    import requests
+    
+    # 构建请求URL
+    # 新浪格式: sz002837, sh600519
+    symbols = []
+    for code in stock_codes:
+        code = str(code).zfill(6)
+        if code.startswith('6'):
+            symbols.append(f"sh{code}")
+        else:
+            symbols.append(f"sz{code}")
+    
+    url = f"http://hq.sinajs.cn/list={','.join(symbols)}"
+    headers = {
+        'Referer': 'http://finance.sina.com.cn',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }
+    
+    try:
+        r = requests.get(url, headers=headers, timeout=10)
+        r.encoding = 'gbk'
+        text = r.text
+    except Exception as e:
+        return {"status": "failed", "error": f"新浪接口请求失败: {e}"}
+    
+    # 解析数据
+    # 格式: var hq_str_sz002837="名称,今开,昨收,当前价,最高,最低,买一价,卖一价,成交量,成交额,..."
+    records = []
+    info_records = []
+    
+    for line in text.split(';'):
+        if not line.strip():
+            continue
+        try:
+            # 提取代码和数据
+            import re
+            match = re.match(r'var hq_str_(sz|sh)(\d+)="(.*)"', line.strip())
+            if not match:
+                continue
+            
+            code = match.group(2)
+            data = match.group(3).split(',')
+            
+            if len(data) < 10:
+                continue
+            
+            name = data[0]
+            open_price = float(data[1]) if data[1] else 0
+            pre_close = float(data[2]) if data[2] else 0
+            current = float(data[3]) if data[3] else 0
+            high = float(data[4]) if data[4] else 0
+            low = float(data[5]) if data[5] else 0
+            volume = float(data[8]) if data[8] else 0  # 股
+            amount = float(data[9]) if data[9] else 0   # 元
+            
+            if current > 0 and volume > 0:
+                records.append({
+                    "code": code,
+                    "date": today,
+                    "open": open_price,
+                    "close": current,
+                    "high": high,
+                    "low": low,
+                    "volume": volume,
+                    "turnover": 0,  # 新浪不直接提供换手率
+                })
+                info_records.append({
+                    "code": code,
+                    "name": name,
+                    "total_mv": 0,
+                    "circ_mv": 0,
+                    "turnover": 0,
+                    "volume_ratio": 0,
+                })
+        except Exception:
+            continue
+    
+    if not records:
+        return {"status": "failed", "error": "没有有效数据"}
+    
+    saved_count = cache.save_stock_data_batch(records, is_intraday=True)
+    if info_records:
+        cache.save_stock_info_batch(info_records)
+    
+    console.print(f"[green]✓ 盘中同步完成！共 {saved_count} 条记录[/]")
+    
+    return {
+        "status": "success",
+        "date": today,
+        "stocks": saved_count,
+    }
+
+
+def _sync_intraday_em(cache: CacheDB, today: str) -> dict:
+    """使用东方财富接口同步全市场实时数据"""
+    import akshare as ak
+    
+    try:
+        df = ak.stock_zh_a_spot_em()
+    except Exception as e:
+        return {"status": "failed", "error": f"东方财富接口失败: {e}"}
+    
+    if df.empty:
+        return {"status": "failed", "error": "获取数据为空"}
+    
+    # 过滤北交所
+    df = df[~df['代码'].astype(str).str.match(r'^[48]')]
+    
+    # 字段映射
+    records = []
+    for _, row in df.iterrows():
+        try:
+            record = {
+                "code": row["代码"],
+                "date": today,
+                "open": float(row.get("今开", 0) or 0),
+                "close": float(row.get("最新价", 0) or 0),
+                "high": float(row.get("最高", 0) or 0),
+                "low": float(row.get("最低", 0) or 0),
+                "volume": float(row.get("成交量", 0) or 0),
+                "turnover": float(row.get("换手率", 0) or 0),
+            }
+            if record["close"] > 0 and record["volume"] > 0:
+                records.append(record)
+        except Exception:
+            continue
+    
+    if not records:
+        return {"status": "failed", "error": "没有有效数据"}
+    
+    saved_count = cache.save_stock_data_batch(records, is_intraday=True)
+    
+    info_records = []
+    for _, row in df.iterrows():
+        try:
+            info_records.append({
+                "code": row["代码"],
+                "name": row["名称"],
+                "total_mv": float(row.get("总市值", 0) or 0) / 1e8,
+                "circ_mv": float(row.get("流通市值", 0) or 0) / 1e8,
+                "turnover": float(row.get("换手率", 0) or 0),
+                "volume_ratio": float(row.get("量比", 0) or 0),
+            })
+        except Exception:
+            continue
+    
+    if info_records:
+        cache.save_stock_info_batch(info_records)
+    
+    console.print(f"[green]✓ 盘中同步完成！共 {saved_count} 条记录[/]")
+    
+    return {
+        "status": "success",
+        "date": today,
+        "stocks": saved_count,
+    }

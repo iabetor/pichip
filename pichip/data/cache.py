@@ -201,6 +201,75 @@ class CacheDB:
                 records,
             )
 
+    def save_stock_data_batch(self, records: list, is_intraday: bool = False) -> int:
+        """批量保存股票K线数据（用于盘中快速同步）
+        
+        Args:
+            records: 数据记录列表，每条记录为字典格式
+                     {"code": str, "date": str, "open": float, ...}
+            is_intraday: 是否为盘中数据（盘中数据会标记，收盘后可能被覆盖）
+            
+        Returns:
+            保存的记录数
+        """
+        if not records:
+            return 0
+            
+        data = []
+        for r in records:
+            data.append((
+                r["code"],
+                r["date"],
+                r["open"],
+                r["close"],
+                r["high"],
+                r["low"],
+                r["volume"],
+                r.get("turnover", 0),
+            ))
+            
+        with self._get_conn() as conn:
+            conn.executemany(
+                """INSERT OR REPLACE INTO stock_daily
+                   (code, date, open, close, high, low, volume, turnover)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                data,
+            )
+        return len(data)
+
+    def save_stock_info_batch(self, records: list) -> int:
+        """批量保存股票基本信息
+        
+        Args:
+            records: 数据记录列表，每条记录为字典格式
+                     {"code": str, "name": str, "total_mv": float, ...}
+                     
+        Returns:
+            保存的记录数
+        """
+        if not records:
+            return 0
+            
+        data = []
+        for r in records:
+            data.append((
+                r["code"],
+                r["name"],
+                r.get("total_mv", 0) or 0,
+                r.get("circ_mv", 0) or 0,
+                r.get("turnover", 0) or 0,
+                r.get("volume_ratio", 0) or 0,
+            ))
+            
+        with self._get_conn() as conn:
+            conn.executemany(
+                """INSERT OR REPLACE INTO stock_info
+                   (code, name, total_mv, circ_mv, turnover, volume_ratio)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                data,
+            )
+        return len(data)
+
     def get_stock_data(
         self, code: str, start_date: Optional[str] = None, end_date: Optional[str] = None
     ) -> pd.DataFrame:

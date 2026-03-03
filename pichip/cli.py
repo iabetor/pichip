@@ -316,7 +316,7 @@ def cmd_find_like(args: argparse.Namespace) -> None:
 
 def cmd_sync(args: argparse.Namespace) -> None:
     """同步数据"""
-    from pichip.data.fetcher import repair_turnover
+    from pichip.data.fetcher import repair_turnover, sync_intraday_data
 
     cache = CacheDB()
 
@@ -337,6 +337,20 @@ def cmd_sync(args: argparse.Namespace) -> None:
             console.print(f"[red]同步失败: {result.get('error', '未知错误')}[/red]")
         return
 
+    # 盘中实时同步
+    if args.intraday:
+        stock_codes = args.stock.split(",") if args.stock else None
+        if stock_codes:
+            console.print(f"[bold]同步指定股票盘中数据: {stock_codes}[/bold]")
+        else:
+            console.print("[bold]同步盘中实时数据（用于中午复盘）...[/bold]")
+        result = sync_intraday_data(cache, stock_codes=stock_codes)
+        if result.get("status") == "success":
+            console.print(f"[bold green]盘中同步完成！共 {result.get('stocks', 0)} 只股票[/bold green]")
+        else:
+            console.print(f"[red]同步失败: {result.get('error', '未知错误')}[/red]")
+        return
+
     console.print("[bold]开始同步全A股历史数据...[/bold]")
     
     # 处理 --today 选项
@@ -348,6 +362,30 @@ def cmd_sync(args: argparse.Namespace) -> None:
     console.print(f"时间范围: {args.start_date} ~ {args.end_date}")
     sync_all_stocks(cache, args.start_date, args.end_date)
     console.print("[bold green]同步完成！[/bold green]")
+
+
+def cmd_bottom(args: argparse.Namespace) -> None:
+    """抄底分析"""
+    from .analysis.bottom_analysis import compare_stocks, print_comparison, get_recommendation
+    
+    cache = CacheDB()
+    
+    # 解析股票代码
+    codes = [c.strip() for c in args.stocks.split(',')]
+    
+    console.print(f"[bold]分析股票: {', '.join(codes)}[/]\n")
+    
+    # 执行分析
+    results = compare_stocks(cache, codes)
+    
+    # 打印结果
+    print_comparison(results, show_detail=not args.brief)
+    
+    # 打印建议
+    console.print("\n[bold green]" + "=" * 50 + "[/bold green]")
+    console.print("[bold]投资建议[/]")
+    console.print("[bold green]" + "=" * 50 + "[/bold green]")
+    console.print(get_recommendation(results))
 
 
 def cmd_match(args: argparse.Namespace) -> None:
@@ -1612,6 +1650,151 @@ def cmd_scan_pullback(args: argparse.Namespace) -> None:
     console.print("[dim]创业板涨幅阈值12%, 主板7%; 涨停日换手率≤20%[/dim]")
 
 
+def cmd_divergence(args: argparse.Namespace) -> None:
+    """MACD背离扫描"""
+    from .scan.divergence import scan_divergence
+    
+    cache = CacheDB()
+    
+    console.print("[bold]MACD背离扫描[/bold]")
+    
+    div_type = args.type
+    if div_type == "all":
+        console.print("扫描类型: 全部（底背离+顶背离）")
+    elif div_type == "bottom":
+        console.print("扫描类型: 底背离（买入信号）")
+    else:
+        console.print("扫描类型: 顶背离（卖出信号）")
+    
+    console.print(f"参数: 回看{args.days_back}天, 最低评分{args.min_score}分, 返回前{args.top_n}只\n")
+    
+    # 扫描
+    results = scan_divergence(
+        cache,
+        divergence_type=div_type,
+        days_back=args.days_back,
+        min_score=args.min_score,
+        top_n=args.top_n,
+        exclude_st=not args.include_st,
+    )
+    
+    if not results:
+        console.print(f"[yellow]未找到符合条件的背离信号[/yellow]")
+        return
+    
+    console.print(f"[bold green]找到 {len(results)} 个背离信号[/bold green]\n")
+    
+    # 分类显示
+    bottom_results = [r for r in results if r.divergence_type == "bottom"]
+    top_results = [r for r in results if r.divergence_type == "top"]
+    
+    if bottom_results:
+        console.print("[bold green]底背离信号（潜在买入机会）[/bold green]")
+        table = Table(show_header=True, header_style="bold cyan")
+        table.add_column("评分", width=6)
+        table.add_column("代码", width=8)
+        table.add_column("名称", width=10)
+        table.add_column("价格", width=10)
+        table.add_column("MACD柱", width=10)
+        table.add_column("交叉", width=8)
+        table.add_column("位置", width=10)
+        table.add_column("信号", width=30)
+        
+        for r in bottom_results:
+            # 评分颜色
+            if r.score >= 80:
+                score_str = f"[green]{r.score}[/green]"
+            elif r.score >= 60:
+                score_str = f"[yellow]{r.score}[/yellow]"
+            else:
+                score_str = str(r.score)
+            
+            # MACD柱颜色
+            if r.hist_value > 0:
+                hist_str = f"[red]+{r.hist_value:.4f}[/red]"
+            else:
+                hist_str = f"[green]{r.hist_value:.4f}[/green]"
+            
+            # 交叉状态颜色
+            if r.macd_cross == "金叉":
+                cross_str = f"[red]{r.macd_cross}[/red]"
+            elif r.macd_cross == "死叉":
+                cross_str = f"[green]{r.macd_cross}[/green]"
+            else:
+                cross_str = r.macd_cross
+            
+            signals_str = " ".join(r.signals[:4])
+            
+            table.add_row(
+                score_str,
+                r.code,
+                r.name,
+                f"{r.price:.2f}",
+                hist_str,
+                cross_str,
+                r.ma_position,
+                signals_str,
+            )
+        
+        console.print(table)
+        console.print()
+    
+    if top_results:
+        console.print("[bold red]顶背离信号（潜在卖出风险）[/bold red]")
+        table = Table(show_header=True, header_style="bold cyan")
+        table.add_column("评分", width=6)
+        table.add_column("代码", width=8)
+        table.add_column("名称", width=10)
+        table.add_column("价格", width=10)
+        table.add_column("MACD柱", width=10)
+        table.add_column("交叉", width=8)
+        table.add_column("位置", width=10)
+        table.add_column("信号", width=30)
+        
+        for r in top_results:
+            # 评分颜色
+            if r.score >= 80:
+                score_str = f"[red]{r.score}[/red]"
+            elif r.score >= 60:
+                score_str = f"[yellow]{r.score}[/yellow]"
+            else:
+                score_str = str(r.score)
+            
+            # MACD柱颜色
+            if r.hist_value > 0:
+                hist_str = f"[red]+{r.hist_value:.4f}[/red]"
+            else:
+                hist_str = f"[green]{r.hist_value:.4f}[/green]"
+            
+            # 交叉状态颜色
+            if r.macd_cross == "死叉":
+                cross_str = f"[green]{r.macd_cross}[/green]"
+            elif r.macd_cross == "金叉":
+                cross_str = f"[red]{r.macd_cross}[/red]"
+            else:
+                cross_str = r.macd_cross
+            
+            signals_str = " ".join(r.signals[:4])
+            
+            table.add_row(
+                score_str,
+                r.code,
+                r.name,
+                f"{r.price:.2f}",
+                hist_str,
+                cross_str,
+                r.ma_position,
+                signals_str,
+            )
+        
+        console.print(table)
+    
+    # 显示说明
+    console.print("\n[dim]底背离: 价格新低但MACD柱未新低，潜在买入信号[/dim]")
+    console.print("[dim]顶背离: 价格新高但MACD柱未新高，潜在卖出信号[/dim]")
+    console.print("[dim]评分≥80信号强, ≥60信号中等; 金叉/死叉为确认信号[/dim]")
+
+
 def cmd_control(args: argparse.Namespace) -> None:
     """主力控盘指数分析"""
     from .control import calculate_control_index, scan_high_control
@@ -1653,6 +1836,25 @@ def cmd_control(args: argparse.Namespace) -> None:
         if not results:
             console.print(f"[yellow]未找到控盘指数≥{args.min_score}分的股票[/yellow]")
             return
+
+        # 按信号优先级排序：已启动 > 持有观望 > 无信号 > 信号过期
+        def get_signal_priority(r):
+            if r.buy_signal:
+                sig = r.buy_signal.signal
+                if sig == "已启动":
+                    return 0
+                elif sig == "持有观望":
+                    return 1
+                elif sig == "无信号":
+                    return 2
+                elif sig == "信号过期":
+                    return 3
+                else:
+                    return 2  # 其他信号归为无信号类
+            return 2  # 无信号
+        
+        # 先按信号优先级排序，同优先级内按控盘指数降序
+        results.sort(key=lambda x: (get_signal_priority(x), -x.total_score))
 
         console.print(f"\n[bold green]找到 {len(results)} 只高控盘股票[/bold green]\n")
 
@@ -2089,9 +2291,16 @@ def main() -> None:
     sync_parser.add_argument("--start-date", default=default_start, help="起始日期 YYYYMMDD")
     sync_parser.add_argument("--end-date", default=default_end, help="结束日期 YYYYMMDD")
     sync_parser.add_argument("--today", action="store_true", help="仅同步今日数据（收盘后使用）")
+    sync_parser.add_argument("--intraday", action="store_true", help="同步盘中实时数据（中午复盘用）")
+    sync_parser.add_argument("--stock", type=str, help="指定股票代码（逗号分隔，如 002837,000001），配合 --intraday 使用")
     sync_parser.add_argument("--fix-turnover", type=int, nargs="?", const=30, default=None, metavar="DAYS",
                               help="修复最近N天缓存中换手率为0的记录（默认30天）")
     sync_parser.add_argument("--sector", action="store_true", help="同步板块资金流向数据")
+
+    # bottom 命令（抄底分析）
+    bottom_parser = subparsers.add_parser("bottom", help="抄底分析对比")
+    bottom_parser.add_argument("stocks", help="股票代码（逗号分隔，如 002837,600330,300750）")
+    bottom_parser.add_argument("--brief", action="store_true", help="简洁输出，只显示表格")
 
     # match 命令
     match_parser = subparsers.add_parser("match", help="匹配相似K线形态")
@@ -2207,6 +2416,15 @@ def main() -> None:
     control_parser.add_argument("--top-n", type=int, default=50, help="返回前N只股票（扫描时使用）")
     control_parser.add_argument("--sync-holder", action="store_true", help="同步股东户数数据到本地缓存")
     control_parser.add_argument("--sync-index", action="store_true", help="同步大盘指数数据到本地缓存")
+    
+    # divergence 命令
+    divergence_parser = subparsers.add_parser("divergence", help="MACD背离扫描")
+    divergence_parser.add_argument("--type", choices=["all", "bottom", "top"], default="all",
+                                   help="背离类型: all(全部), bottom(底背离), top(顶背离)")
+    divergence_parser.add_argument("--days-back", type=int, default=30, help="扫描天数范围（默认30天）")
+    divergence_parser.add_argument("--min-score", type=int, default=50, help="最低评分（默认50）")
+    divergence_parser.add_argument("--top-n", type=int, default=50, help="返回前N只股票")
+    divergence_parser.add_argument("--include-st", action="store_true", help="包含ST股票（默认排除）")
 
     # scan 命令
     scan_parser = subparsers.add_parser("scan", help="扫描选股")
@@ -2257,8 +2475,12 @@ def main() -> None:
         cmd_hot(args)
     elif args.command == "control":
         cmd_control(args)
+    elif args.command == "divergence":
+        cmd_divergence(args)
     elif args.command == "scan":
         cmd_scan(args)
+    elif args.command == "bottom":
+        cmd_bottom(args)
 
 
 if __name__ == "__main__":
