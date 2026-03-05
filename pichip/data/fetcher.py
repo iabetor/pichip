@@ -1029,25 +1029,105 @@ def _sync_intraday_em(cache: CacheDB, today: str) -> dict:
 def get_industry_board_list() -> pd.DataFrame:
     """获取行业板块列表（含实时行情）
 
+    优先使用同花顺接口，失败则降级到东方财富接口
+
     Returns:
         DataFrame: 板块代码、板块名称、涨跌幅、换手率等
     """
     import akshare as ak
+    import time
+    import os
 
-    df = ak.stock_board_industry_name_em()
-    return df
+    # 禁用代理
+    os.environ.pop('HTTP_PROXY', None)
+    os.environ.pop('HTTPS_PROXY', None)
+    os.environ.pop('http_proxy', None)
+    os.environ.pop('https_proxy', None)
+
+    # 方案1: 优先使用同花顺接口
+    console.print("[dim]尝试同花顺接口...[/]")
+    try:
+        df = ak.stock_board_industry_name_ths()
+        if df is not None and not df.empty:
+            console.print("[green]✓ 同花顺接口成功[/]")
+            # 标准化列名
+            df = df.rename(columns={
+                'name': '板块名称',
+                'code': '板块代码',
+            })
+            return df
+    except Exception as e:
+        console.print(f"[yellow]同花顺接口失败: {e}[/]")
+
+    # 方案2: 降级到东方财富接口
+    console.print("[dim]尝试东方财富接口...[/]")
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            df = ak.stock_board_industry_name_em()
+            if df is not None and not df.empty:
+                console.print("[green]✓ 东方财富接口成功[/]")
+                return df
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 3
+                console.print(f"[yellow]东方财富接口失败，{wait_time}秒后重试 ({attempt + 1}/{max_retries})[/]")
+                time.sleep(wait_time)
+            else:
+                console.print(f"[red]所有接口失败: {e}[/]")
+    return pd.DataFrame()
 
 
 def get_concept_board_list() -> pd.DataFrame:
     """获取概念板块列表（含实时行情）
 
+    优先使用同花顺接口，失败则降级到东方财富接口
+
     Returns:
         DataFrame: 板块代码、板块名称、涨跌幅、换手率等
     """
     import akshare as ak
+    import time
+    import os
 
-    df = ak.stock_board_concept_name_em()
-    return df
+    # 禁用代理
+    os.environ.pop('HTTP_PROXY', None)
+    os.environ.pop('HTTPS_PROXY', None)
+    os.environ.pop('http_proxy', None)
+    os.environ.pop('https_proxy', None)
+
+    # 方案1: 优先使用同花顺接口
+    console.print("[dim]尝试同花顺接口...[/]")
+    try:
+        df = ak.stock_board_concept_name_ths()
+        if df is not None and not df.empty:
+            console.print("[green]✓ 同花顺接口成功[/]")
+            # 标准化列名
+            df = df.rename(columns={
+                'name': '板块名称',
+                'code': '板块代码',
+            })
+            return df
+    except Exception as e:
+        console.print(f"[yellow]同花顺接口失败: {e}[/]")
+
+    # 方案2: 降级到东方财富接口
+    console.print("[dim]尝试东方财富接口...[/]")
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            df = ak.stock_board_concept_name_em()
+            if df is not None and not df.empty:
+                console.print("[green]✓ 东方财富接口成功[/]")
+                return df
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 3
+                console.print(f"[yellow]东方财富接口失败，{wait_time}秒后重试 ({attempt + 1}/{max_retries})[/]")
+                time.sleep(wait_time)
+            else:
+                console.print(f"[red]所有接口失败: {e}[/]")
+    return pd.DataFrame()
 
 
 def get_industry_board_history(
@@ -1057,6 +1137,8 @@ def get_industry_board_history(
 ) -> pd.DataFrame:
     """获取行业板块历史K线数据
 
+    优先使用同花顺接口，失败则降级到东方财富接口
+
     Args:
         symbol: 板块代码或名称
         start_date: 开始日期 YYYYMMDD
@@ -1066,39 +1148,88 @@ def get_industry_board_history(
         DataFrame: K线数据
     """
     import akshare as ak
+    import os
+    import time
 
+    # 禁用代理
+    os.environ.pop('HTTP_PROXY', None)
+    os.environ.pop('HTTPS_PROXY', None)
+    os.environ.pop('http_proxy', None)
+    os.environ.pop('https_proxy', None)
+
+    # 方案1: 优先使用同花顺接口
     try:
-        df = ak.stock_board_industry_hist_em(
-            symbol=symbol,
-            period="日k",
-            start_date=start_date,
-            end_date=end_date,
-            adjust="",
-        )
+        df = ak.stock_board_industry_index_ths(symbol=symbol)
 
-        if df is None or df.empty:
-            return pd.DataFrame()
+        if df is not None and not df.empty:
+            # 标准化列名
+            df = df.rename(columns={
+                "日期": "date",
+                "开盘价": "open",
+                "收盘价": "close",
+                "最高价": "high",
+                "最低价": "low",
+                "成交量": "volume",
+                "成交额": "amount",
+            })
 
-        # 标准化列名
-        df = df.rename(columns={
-            "日期": "date",
-            "开盘": "open",
-            "收盘": "close",
-            "最高": "high",
-            "最低": "low",
-            "成交量": "volume",
-            "成交额": "amount",
-            "涨跌幅": "change_pct",
-            "换手率": "turnover",
-        })
+            df["date"] = pd.to_datetime(df["date"])
 
-        df["date"] = pd.to_datetime(df["date"])
+            # 计算涨跌幅和换手率（在日期过滤之前）
+            df["change_pct"] = ((df["close"] - df["open"]) / df["open"] * 100).round(2)
+            df["turnover"] = (df["volume"] / df["volume"].rolling(5).mean() * 100).fillna(0).round(2)
 
-        return df[["date", "open", "close", "high", "low", "volume", "amount", "change_pct", "turnover"]]
+            # 日期过滤
+            start_dt = pd.to_datetime(start_date)
+            end_dt = pd.to_datetime(end_date)
+            df_filtered = df[(df["date"] >= start_dt) & (df["date"] <= end_dt)]
 
+            # 如果过滤后为空，返回所有数据
+            if df_filtered.empty:
+                return df[["date", "open", "close", "high", "low", "volume", "amount", "change_pct", "turnover"]]
+            else:
+                return df_filtered[["date", "open", "close", "high", "low", "volume", "amount", "change_pct", "turnover"]]
     except Exception as e:
-        console.print(f"[yellow]获取行业板块 {symbol} K线失败: {e}[/]")
-        return pd.DataFrame()
+        console.print(f"[dim]同花顺接口失败: {e}[/]")
+
+    # 方案2: 降级到东方财富接口
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            df = ak.stock_board_industry_hist_em(
+                symbol=symbol,
+                period="日k",
+                start_date=start_date,
+                end_date=end_date,
+                adjust="",
+            )
+
+            if df is None or df.empty:
+                return pd.DataFrame()
+
+            # 标准化列名
+            df = df.rename(columns={
+                "日期": "date",
+                "开盘": "open",
+                "收盘": "close",
+                "最高": "high",
+                "最低": "low",
+                "成交量": "volume",
+                "成交额": "amount",
+                "涨跌幅": "change_pct",
+                "换手率": "turnover",
+            })
+
+            df["date"] = pd.to_datetime(df["date"])
+
+            return df[["date", "open", "close", "high", "low", "volume", "amount", "change_pct", "turnover"]]
+
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(1)
+            else:
+                console.print(f"[yellow]所有接口失败 {symbol}: {e}[/]")
+    return pd.DataFrame()
 
 
 def get_concept_board_history(
@@ -1108,6 +1239,8 @@ def get_concept_board_history(
 ) -> pd.DataFrame:
     """获取概念板块历史K线数据
 
+    优先使用同花顺接口，失败则降级到东方财富接口
+
     Args:
         symbol: 板块代码或名称
         start_date: 开始日期 YYYYMMDD
@@ -1117,39 +1250,88 @@ def get_concept_board_history(
         DataFrame: K线数据
     """
     import akshare as ak
+    import os
+    import time
 
+    # 禁用代理
+    os.environ.pop('HTTP_PROXY', None)
+    os.environ.pop('HTTPS_PROXY', None)
+    os.environ.pop('http_proxy', None)
+    os.environ.pop('https_proxy', None)
+
+    # 方案1: 优先使用同花顺接口
     try:
-        df = ak.stock_board_concept_hist_em(
-            symbol=symbol,
-            period="日k",
-            start_date=start_date,
-            end_date=end_date,
-            adjust="",
-        )
+        df = ak.stock_board_concept_index_ths(symbol=symbol)
 
-        if df is None or df.empty:
-            return pd.DataFrame()
+        if df is not None and not df.empty:
+            # 标准化列名
+            df = df.rename(columns={
+                "日期": "date",
+                "开盘价": "open",
+                "收盘价": "close",
+                "最高价": "high",
+                "最低价": "low",
+                "成交量": "volume",
+                "成交额": "amount",
+            })
 
-        # 标准化列名
-        df = df.rename(columns={
-            "日期": "date",
-            "开盘": "open",
-            "收盘": "close",
-            "最高": "high",
-            "最低": "low",
-            "成交量": "volume",
-            "成交额": "amount",
-            "涨跌幅": "change_pct",
-            "换手率": "turnover",
-        })
+            df["date"] = pd.to_datetime(df["date"])
 
-        df["date"] = pd.to_datetime(df["date"])
+            # 计算涨跌幅和换手率（在日期过滤之前）
+            df["change_pct"] = ((df["close"] - df["open"]) / df["open"] * 100).round(2)
+            df["turnover"] = (df["volume"] / df["volume"].rolling(5).mean() * 100).fillna(0).round(2)
 
-        return df[["date", "open", "close", "high", "low", "volume", "amount", "change_pct", "turnover"]]
+            # 日期过滤
+            start_dt = pd.to_datetime(start_date)
+            end_dt = pd.to_datetime(end_date)
+            df_filtered = df[(df["date"] >= start_dt) & (df["date"] <= end_dt)]
 
+            # 如果过滤后为空，返回所有数据
+            if df_filtered.empty:
+                return df[["date", "open", "close", "high", "low", "volume", "amount", "change_pct", "turnover"]]
+            else:
+                return df_filtered[["date", "open", "close", "high", "low", "volume", "amount", "change_pct", "turnover"]]
     except Exception as e:
-        console.print(f"[yellow]获取概念板块 {symbol} K线失败: {e}[/]")
-        return pd.DataFrame()
+        console.print(f"[dim]同花顺接口失败: {e}[/]")
+
+    # 方案2: 降级到东方财富接口
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            df = ak.stock_board_concept_hist_em(
+                symbol=symbol,
+                period="日k",
+                start_date=start_date,
+                end_date=end_date,
+                adjust="",
+            )
+
+            if df is None or df.empty:
+                return pd.DataFrame()
+
+            # 标准化列名
+            df = df.rename(columns={
+                "日期": "date",
+                "开盘": "open",
+                "收盘": "close",
+                "最高": "high",
+                "最低": "low",
+                "成交量": "volume",
+                "成交额": "amount",
+                "涨跌幅": "change_pct",
+                "换手率": "turnover",
+            })
+
+            df["date"] = pd.to_datetime(df["date"])
+
+            return df[["date", "open", "close", "high", "low", "volume", "amount", "change_pct", "turnover"]]
+
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(1)
+            else:
+                console.print(f"[yellow]所有接口失败 {symbol}: {e}[/]")
+    return pd.DataFrame()
 
 
 def sync_all_boards(
@@ -1187,31 +1369,41 @@ def sync_all_boards(
             if not df.empty:
                 cache.save_board_info(df, "industry")
                 console.print(f"[green]  ✓ 保存 {len(df)} 个行业板块信息[/]")
+                time.sleep(1)  # 避免请求过快
 
-                # 同步K线数据
-                codes = df["板块代码"].tolist() if "板块代码" in df.columns else []
-                result["industry"]["total"] = len(codes)
+                # 同步K线数据 - 使用板块名称而不是代码
+                # 同花顺接口需要名称，东方财富接口可以用代码
+                board_names = df["板块名称"].tolist() if "板块名称" in df.columns else []
+                board_codes = df["板块代码"].tolist() if "板块代码" in df.columns else []
+                result["industry"]["total"] = len(board_names)
 
                 # 检查已有数据
-                cached_codes = cache.get_boards_with_data(codes, start_date, end_date)
-                need_sync = [c for c in codes if c not in cached_codes]
+                cached_codes = cache.get_boards_with_data(board_codes, start_date, end_date)
+                need_sync = [(code, name) for code, name in zip(board_codes, board_names)
+                             if code not in cached_codes]
 
                 if need_sync:
                     console.print(f"[dim]  同步 {len(need_sync)} 个行业板块K线...[/]")
+                    console.print("[dim]  为了避免被限流，每10个板块间隔5秒...[/]")
 
-                    for i, code in enumerate(need_sync):
+                    for i, (code, name) in enumerate(need_sync):
                         if i % 10 == 0:
                             console.print(f"[dim]  进度: {i}/{len(need_sync)}...[/]")
 
                         try:
-                            kline_df = get_industry_board_history(code, start_date, end_date)
+                            # 优先使用板块名称调用接口
+                            kline_df = get_industry_board_history(name, start_date, end_date)
                             if not kline_df.empty:
                                 cache.save_board_data(code, kline_df)
                                 result["industry"]["synced"] += 1
                             else:
                                 result["industry"]["failed"] += 1
 
-                            time.sleep(0.2)  # 限流
+                            # 每10个板块间隔5秒，其他间隔0.5秒
+                            if (i + 1) % 10 == 0:
+                                time.sleep(5)
+                            else:
+                                time.sleep(0.5)
 
                         except Exception:
                             result["industry"]["failed"] += 1
@@ -1224,36 +1416,48 @@ def sync_all_boards(
     # 同步概念板块
     if board_type in ("all", "concept"):
         console.print("[cyan]同步概念板块列表...[/]")
+        console.print("[dim]  行业和概念板块之间间隔10秒...[/]")
+        time.sleep(10)  # 两种类型板块之间间隔更长
+
         try:
             df = get_concept_board_list()
             if not df.empty:
                 cache.save_board_info(df, "concept")
                 console.print(f"[green]  ✓ 保存 {len(df)} 个概念板块信息[/]")
+                time.sleep(1)  # 避免请求过快
 
-                # 同步K线数据
-                codes = df["板块代码"].tolist() if "板块代码" in df.columns else []
-                result["concept"]["total"] = len(codes)
+                # 同步K线数据 - 使用板块名称而不是代码
+                board_names = df["板块名称"].tolist() if "板块名称" in df.columns else []
+                board_codes = df["板块代码"].tolist() if "板块代码" in df.columns else []
+                result["concept"]["total"] = len(board_names)
 
                 # 检查已有数据
-                cached_codes = cache.get_boards_with_data(codes, start_date, end_date)
-                need_sync = [c for c in codes if c not in cached_codes]
+                cached_codes = cache.get_boards_with_data(board_codes, start_date, end_date)
+                need_sync = [(code, name) for code, name in zip(board_codes, board_names)
+                             if code not in cached_codes]
 
                 if need_sync:
                     console.print(f"[dim]  同步 {len(need_sync)} 个概念板块K线...[/]")
+                    console.print("[dim]  为了避免被限流，每10个板块间隔5秒...[/]")
 
-                    for i, code in enumerate(need_sync):
+                    for i, (code, name) in enumerate(need_sync):
                         if i % 10 == 0:
                             console.print(f"[dim]  进度: {i}/{len(need_sync)}...[/]")
 
                         try:
-                            kline_df = get_concept_board_history(code, start_date, end_date)
+                            # 优先使用板块名称调用接口
+                            kline_df = get_concept_board_history(name, start_date, end_date)
                             if not kline_df.empty:
                                 cache.save_board_data(code, kline_df)
                                 result["concept"]["synced"] += 1
                             else:
                                 result["concept"]["failed"] += 1
 
-                            time.sleep(0.2)  # 限流
+                            # 每10个板块间隔5秒，其他间隔0.5秒
+                            if (i + 1) % 10 == 0:
+                                time.sleep(5)
+                            else:
+                                time.sleep(0.5)
 
                         except Exception:
                             result["concept"]["failed"] += 1
