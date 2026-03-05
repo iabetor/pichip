@@ -150,6 +150,41 @@ class CacheDB:
                 CREATE INDEX IF NOT EXISTS idx_sector_stocks_sector
                 ON sector_stocks(sector_code)
             """)
+            # 板块信息表
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS board_info (
+                    code TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    change_pct REAL,
+                    turnover REAL,
+                    update_time TEXT
+                )
+            """)
+            # 板块K线数据表
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS board_daily (
+                    code TEXT NOT NULL,
+                    date TEXT NOT NULL,
+                    open REAL,
+                    close REAL,
+                    high REAL,
+                    low REAL,
+                    volume REAL,
+                    amount REAL,
+                    change_pct REAL,
+                    turnover REAL,
+                    PRIMARY KEY (code, date)
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_board_daily_code
+                ON board_daily(code)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_board_daily_date
+                ON board_daily(date)
+            """)
 
     def save_stock_data(self, code: str, df: pd.DataFrame) -> None:
         """保存单只股票的K线数据"""
@@ -835,3 +870,204 @@ class CacheDB:
             hot_stocks = {r[0] for r in rows}
 
         return hot_stocks
+
+    # ─────────────────────────────────────────────────────────────────
+    # 板块K线数据缓存
+    # ─────────────────────────────────────────────────────────────────
+
+    def save_board_info(self, df: pd.DataFrame, board_type: str) -> None:
+        """保存板块列表信息
+
+        Args:
+            df: 板块数据 DataFrame，包含 板块代码、板块名称、涨跌幅、换手率
+            board_type: 板块类型 ("industry" 或 "concept")
+        """
+        if df is None or df.empty:
+            return
+
+        from datetime import datetime
+        update_time = datetime.now().strftime("%Y-%m-%d")
+
+        records = []
+        for _, row in df.iterrows():
+            # 兼容不同列名
+            code = row.get("板块代码") or row.get("code") or ""
+            name = row.get("板块名称") or row.get("name") or ""
+            change_pct = row.get("涨跌幅") or row.get("change_pct") or 0
+            turnover = row.get("换手率") or row.get("turnover") or 0
+
+            if code and name:
+                records.append((
+                    str(code),
+                    str(name),
+                    board_type,
+                    float(change_pct) if change_pct else 0,
+                    float(turnover) if turnover else 0,
+                    update_time,
+                ))
+
+        if records:
+            with self._get_conn() as conn:
+                conn.executemany(
+                    """INSERT OR REPLACE INTO board_info
+                       (code, name, type, change_pct, turnover, update_time)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    records,
+                )
+
+    def get_board_info(self, board_type: Optional[str] = None) -> pd.DataFrame:
+        """获取板块列表信息
+
+        Args:
+            board_type: 板块类型 ("industry" 或 "concept")，None 表示全部
+
+        Returns:
+            板块信息 DataFrame
+        """
+        query = "SELECT * FROM board_info"
+        params: list = []
+
+        if board_type:
+            query += " WHERE type = ?"
+            params.append(board_type)
+
+        query += " ORDER BY code"
+
+        with self._get_conn() as conn:
+            return pd.read_sql_query(query, conn, params=params)
+
+    def get_board_list(self, board_type: Optional[str] = None) -> List[dict]:
+        """获取板块列表
+
+        Args:
+            board_type: 板块类型 ("industry" 或 "concept")，None 表示全部
+
+        Returns:
+            板块列表 [{"code": str, "name": str, "type": str}, ...]
+        """
+        query = "SELECT code, name, type FROM board_info"
+        params: list = []
+
+        if board_type:
+            query += " WHERE type = ?"
+            params.append(board_type)
+
+        query += " ORDER BY code"
+
+        with self._get_conn() as conn:
+            rows = conn.execute(query, params).fetchall()
+            return [{"code": r[0], "name": r[1], "type": r[2]} for r in rows]
+
+    def save_board_data(self, code: str, df: pd.DataFrame) -> None:
+        """保存板块K线数据
+
+        Args:
+            code: 板块代码
+            df: K线数据 DataFrame
+        """
+        if df is None or df.empty:
+            return
+
+        records = []
+        for _, row in df.iterrows():
+            date = row.get("date") or row.get("日期")
+            if hasattr(date, "strftime"):
+                date = date.strftime("%Y-%m-%d")
+
+            records.append((
+                code,
+                date,
+                row.get("open") or row.get("开盘") or 0,
+                row.get("close") or row.get("收盘") or 0,
+                row.get("high") or row.get("最高") or 0,
+                row.get("low") or row.get("最低") or 0,
+                row.get("volume") or row.get("成交量") or 0,
+                row.get("amount") or row.get("成交额") or 0,
+                row.get("change_pct") or row.get("涨跌幅") or 0,
+                row.get("turnover") or row.get("换手率") or 0,
+            ))
+
+        with self._get_conn() as conn:
+            conn.executemany(
+                """INSERT OR REPLACE INTO board_daily
+                   (code, date, open, close, high, low, volume, amount, change_pct, turnover)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                records,
+            )
+
+    def get_board_data(
+        self,
+        code: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """获取板块K线数据
+
+        Args:
+            code: 板块代码
+            start_date: 开始日期 YYYYMMDD 或 YYYY-MM-DD
+            end_date: 结束日期
+
+        Returns:
+            K线数据 DataFrame
+        """
+        query = "SELECT * FROM board_daily WHERE code = ?"
+        params: list = [code]
+
+        if start_date:
+            if len(start_date) == 8:
+                start_date = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:]}"
+            query += " AND date >= ?"
+            params.append(start_date)
+
+        if end_date:
+            if len(end_date) == 8:
+                end_date = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:]}"
+            query += " AND date <= ?"
+            params.append(end_date)
+
+        query += " ORDER BY date"
+
+        with self._get_conn() as conn:
+            df = pd.read_sql_query(query, conn, params=params)
+
+        if not df.empty:
+            df["date"] = pd.to_datetime(df["date"])
+
+        return df
+
+    def get_board_latest_date(self, code: str) -> Optional[str]:
+        """获取板块数据的最新日期"""
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT MAX(date) FROM board_daily WHERE code = ?",
+                (code,),
+            ).fetchone()
+            return row[0] if row and row[0] else None
+
+    def get_boards_with_data(self, codes: List[str], start_date: str, end_date: str) -> set:
+        """批量检查哪些板块已有指定时间范围的数据
+
+        Args:
+            codes: 板块代码列表
+            start_date: 开始日期 YYYYMMDD
+            end_date: 结束日期 YYYYMMDD
+
+        Returns:
+            已有数据的板块代码集合
+        """
+        if not codes:
+            return set()
+
+        start = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:]}"
+        end = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:]}"
+
+        with self._get_conn() as conn:
+            placeholders = ",".join("?" * len(codes))
+            rows = conn.execute(
+                f"""SELECT DISTINCT code FROM board_daily
+                   WHERE code IN ({placeholders})
+                   AND date >= ? AND date <= ?""",
+                codes + [start, end],
+            ).fetchall()
+        return {r[0] for r in rows}

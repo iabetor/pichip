@@ -388,6 +388,196 @@ def cmd_bottom(args: argparse.Namespace) -> None:
     console.print(get_recommendation(results))
 
 
+def cmd_board(args: argparse.Namespace) -> None:
+    """板块数据管理"""
+    from .data.fetcher import (
+        get_industry_board_list,
+        get_concept_board_list,
+        sync_all_boards,
+    )
+    from .indicators.macd import calc_macd
+
+    cache = CacheDB()
+
+    if args.board_action is None:
+        console.print("[yellow]请指定子命令: list, sync, show[/]")
+        return
+
+    if args.board_action == "list":
+        # 列出板块
+        board_type = args.type
+        console.print(f"[bold]板块列表 (类型: {board_type})[/]\n")
+
+        boards = cache.get_board_info(board_type if board_type != "all" else None)
+
+        if boards.empty:
+            # 尝试在线获取
+            console.print("[dim]本地无缓存，尝试在线获取...[/]")
+            try:
+                if board_type in ("all", "industry"):
+                    industry_df = get_industry_board_list()
+                    if not industry_df.empty:
+                        console.print(f"\n[cyan]行业板块 ({len(industry_df)} 个)[/]")
+                        table = Table(show_header=True)
+                        table.add_column("代码")
+                        table.add_column("名称")
+                        table.add_column("涨跌幅")
+                        table.add_column("换手率")
+                        for _, row in industry_df.head(20).iterrows():
+                            table.add_row(
+                                str(row.get("板块代码", "")),
+                                str(row.get("板块名称", "")),
+                                f"{row.get('涨跌幅', 0):.2f}%",
+                                f"{row.get('换手率', 0):.2f}%",
+                            )
+                        console.print(table)
+
+                if board_type in ("all", "concept"):
+                    concept_df = get_concept_board_list()
+                    if not concept_df.empty:
+                        console.print(f"\n[cyan]概念板块 ({len(concept_df)} 个)[/]")
+                        table = Table(show_header=True)
+                        table.add_column("代码")
+                        table.add_column("名称")
+                        table.add_column("涨跌幅")
+                        table.add_column("换手率")
+                        for _, row in concept_df.head(20).iterrows():
+                            table.add_row(
+                                str(row.get("板块代码", "")),
+                                str(row.get("板块名称", "")),
+                                f"{row.get('涨跌幅', 0):.2f}%",
+                                f"{row.get('换手率', 0):.2f}%",
+                            )
+                        console.print(table)
+            except Exception as e:
+                console.print(f"[red]获取板块列表失败: {e}[/]")
+        else:
+            # 显示缓存数据
+            if board_type == "all":
+                industry_boards = boards[boards["type"] == "industry"]
+                concept_boards = boards[boards["type"] == "concept"]
+
+                if not industry_boards.empty:
+                    console.print(f"\n[cyan]行业板块 ({len(industry_boards)} 个)[/]")
+                    table = Table(show_header=True)
+                    table.add_column("代码")
+                    table.add_column("名称")
+                    table.add_column("涨跌幅")
+                    table.add_column("换手率")
+                    for _, row in industry_boards.head(20).iterrows():
+                        table.add_row(
+                            str(row.get("code", "")),
+                            str(row.get("name", "")),
+                            f"{row.get('change_pct', 0):.2f}%",
+                            f"{row.get('turnover', 0):.2f}%",
+                        )
+                    console.print(table)
+
+                if not concept_boards.empty:
+                    console.print(f"\n[cyan]概念板块 ({len(concept_boards)} 个)[/]")
+                    table = Table(show_header=True)
+                    table.add_column("代码")
+                    table.add_column("名称")
+                    table.add_column("涨跌幅")
+                    table.add_column("换手率")
+                    for _, row in concept_boards.head(20).iterrows():
+                        table.add_row(
+                            str(row.get("code", "")),
+                            str(row.get("name", "")),
+                            f"{row.get('change_pct', 0):.2f}%",
+                            f"{row.get('turnover', 0):.2f}%",
+                        )
+                    console.print(table)
+            else:
+                console.print(f"\n[cyan]{board_type} 板块 ({len(boards)} 个)[/]")
+                table = Table(show_header=True)
+                table.add_column("代码")
+                table.add_column("名称")
+                table.add_column("涨跌幅")
+                table.add_column("换手率")
+                for _, row in boards.head(30).iterrows():
+                    table.add_row(
+                        str(row.get("code", "")),
+                        str(row.get("name", "")),
+                        f"{row.get('change_pct', 0):.2f}%",
+                        f"{row.get('turnover', 0):.2f}%",
+                    )
+                console.print(table)
+
+    elif args.board_action == "sync":
+        # 同步板块数据
+        console.print("[bold]同步板块K线数据[/]\n")
+
+        board_type = args.type
+        start_date = args.start_date
+        end_date = args.end_date
+
+        result = sync_all_boards(cache, start_date, end_date, board_type)
+
+        console.print("\n[bold green]同步完成[/]")
+        console.print(f"  行业板块: {result['industry']['synced']}/{result['industry']['total']} 同步成功")
+        console.print(f"  概念板块: {result['concept']['synced']}/{result['concept']['total']} 同步成功")
+
+    elif args.board_action == "show":
+        # 显示板块K线
+        board_name = args.name
+        days = args.days
+
+        console.print(f"[bold]板块: {board_name}[/]\n")
+
+        # 先尝试从缓存获取
+        df = cache.get_board_data(board_name)
+
+        if df.empty:
+            # 尝试按名称查找代码
+            board_info = cache.get_board_info()
+            matched = board_info[board_info["name"] == board_name]
+            if not matched.empty:
+                board_code = matched.iloc[0]["code"]
+                df = cache.get_board_data(board_code)
+
+        if df.empty:
+            console.print(f"[yellow]本地无 {board_name} 数据，请先同步: pichip board sync[/]")
+            return
+
+        # 取最近N天
+        df = df.tail(days)
+
+        # 计算MACD
+        macd_result = calc_macd(df["close"])
+        df["macd"] = macd_result["diff"]
+        df["signal"] = macd_result["dea"]
+        df["hist"] = macd_result["hist"]
+
+        # 显示表格
+        table = Table(show_header=True, title=f"{board_name} 最近{days}天K线")
+        table.add_column("日期")
+        table.add_column("开盘", justify="right")
+        table.add_column("收盘", justify="right")
+        table.add_column("最高", justify="right")
+        table.add_column("最低", justify="right")
+        table.add_column("涨跌幅", justify="right")
+        table.add_column("换手率", justify="right")
+        table.add_column("MACD", justify="right")
+
+        for _, row in df.iterrows():
+            date_str = row["date"].strftime("%Y-%m-%d") if hasattr(row["date"], "strftime") else str(row["date"])[:10]
+            change_color = "red" if row.get("change_pct", 0) > 0 else ("green" if row.get("change_pct", 0) < 0 else "")
+
+            table.add_row(
+                date_str,
+                f"{row.get('open', 0):.2f}",
+                f"{row.get('close', 0):.2f}",
+                f"{row.get('high', 0):.2f}",
+                f"{row.get('low', 0):.2f}",
+                f"[{change_color}]{row.get('change_pct', 0):.2f}%[/{change_color}]" if change_color else f"{row.get('change_pct', 0):.2f}%",
+                f"{row.get('turnover', 0):.2f}%",
+                f"{row.get('macd', 0):.3f}",
+            )
+
+        console.print(table)
+
+
 def cmd_match(args: argparse.Namespace) -> None:
     """执行匹配"""
     cache = CacheDB()
@@ -2426,6 +2616,27 @@ def main() -> None:
     divergence_parser.add_argument("--top-n", type=int, default=50, help="返回前N只股票")
     divergence_parser.add_argument("--include-st", action="store_true", help="包含ST股票（默认排除）")
 
+    # board 命令
+    board_parser = subparsers.add_parser("board", help="板块数据管理")
+    board_subparsers = board_parser.add_subparsers(dest="board_action", help="板块操作")
+
+    # board list 子命令
+    board_list_parser = board_subparsers.add_parser("list", help="列出板块")
+    board_list_parser.add_argument("--type", choices=["industry", "concept", "all"], default="all",
+                                   help="板块类型: industry(行业), concept(概念), all(全部)")
+
+    # board sync 子命令
+    board_sync_parser = board_subparsers.add_parser("sync", help="同步板块K线数据")
+    board_sync_parser.add_argument("--type", choices=["industry", "concept", "all"], default="all",
+                                   help="板块类型: industry(行业), concept(概念), all(全部)")
+    board_sync_parser.add_argument("--start-date", help="开始日期 YYYYMMDD，默认1年前")
+    board_sync_parser.add_argument("--end-date", help="结束日期 YYYYMMDD，默认今天")
+
+    # board show 子命令
+    board_show_parser = board_subparsers.add_parser("show", help="显示板块K线")
+    board_show_parser.add_argument("name", help="板块名称或代码")
+    board_show_parser.add_argument("--days", type=int, default=30, help="显示最近N天数据")
+
     # scan 命令
     scan_parser = subparsers.add_parser("scan", help="扫描选股")
     scan_subparsers = scan_parser.add_subparsers(dest="scan_type", help="扫描类型")
@@ -2481,6 +2692,8 @@ def main() -> None:
         cmd_scan(args)
     elif args.command == "bottom":
         cmd_bottom(args)
+    elif args.command == "board":
+        cmd_board(args)
 
 
 if __name__ == "__main__":

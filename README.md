@@ -485,6 +485,9 @@ llm:
 | `pichip control` | 主力控盘指数分析 |
 | `pichip scan pullback` | 健康回踩扫描 |
 | `pichip divergence` | MACD背离扫描 |
+| `pichip board list` | 列出板块（行业/概念） |
+| `pichip board sync` | 同步板块K线数据 |
+| `pichip board show` | 显示板块K线和技术指标 |
 
 ### match 命令参数
 
@@ -497,6 +500,32 @@ llm:
 | `--min-corr` | 最低相关系数 | 0.7 |
 | `--latest` | 只匹配最新形态 | False |
 | `--volume-weight` | 量能权重 | 0.0 |
+
+### board 命令参数
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `pichip board list --type` | 板块类型: industry/concept/all | all |
+| `pichip board sync --type` | 板块类型: industry/concept/all | all |
+| `pichip board sync --start-date` | 开始日期 YYYYMMDD | 1年前 |
+| `pichip board sync --end-date` | 结束日期 YYYYMMDD | 今天 |
+| `pichip board show <name>` | 板块名称或代码 | 必填 |
+| `pichip board show --days` | 显示最近N天数据 | 30 |
+
+**示例：**
+```bash
+# 列出所有行业板块
+pichip board list --type industry
+
+# 同步板块K线数据（最近1年）
+pichip board sync
+
+# 同步指定时间范围的板块数据
+pichip board sync --start-date 20240101 --end-date 20241231
+
+# 显示半导体板块K线
+pichip board show 半导体 --days 60
+```
 | `--board` | 限定行业板块 | - |
 | `--concept` | 限定概念题材 | - |
 | `--min-mv` | 最小市值（亿） | - |

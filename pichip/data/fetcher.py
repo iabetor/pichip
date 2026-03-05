@@ -1020,3 +1020,247 @@ def _sync_intraday_em(cache: CacheDB, today: str) -> dict:
         "date": today,
         "stocks": saved_count,
     }
+
+
+# ─────────────────────────────────────────────────────────────────
+# 板块K线数据获取
+# ─────────────────────────────────────────────────────────────────
+
+def get_industry_board_list() -> pd.DataFrame:
+    """获取行业板块列表（含实时行情）
+
+    Returns:
+        DataFrame: 板块代码、板块名称、涨跌幅、换手率等
+    """
+    import akshare as ak
+
+    df = ak.stock_board_industry_name_em()
+    return df
+
+
+def get_concept_board_list() -> pd.DataFrame:
+    """获取概念板块列表（含实时行情）
+
+    Returns:
+        DataFrame: 板块代码、板块名称、涨跌幅、换手率等
+    """
+    import akshare as ak
+
+    df = ak.stock_board_concept_name_em()
+    return df
+
+
+def get_industry_board_history(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+) -> pd.DataFrame:
+    """获取行业板块历史K线数据
+
+    Args:
+        symbol: 板块代码或名称
+        start_date: 开始日期 YYYYMMDD
+        end_date: 结束日期 YYYYMMDD
+
+    Returns:
+        DataFrame: K线数据
+    """
+    import akshare as ak
+
+    try:
+        df = ak.stock_board_industry_hist_em(
+            symbol=symbol,
+            period="日k",
+            start_date=start_date,
+            end_date=end_date,
+            adjust="",
+        )
+
+        if df is None or df.empty:
+            return pd.DataFrame()
+
+        # 标准化列名
+        df = df.rename(columns={
+            "日期": "date",
+            "开盘": "open",
+            "收盘": "close",
+            "最高": "high",
+            "最低": "low",
+            "成交量": "volume",
+            "成交额": "amount",
+            "涨跌幅": "change_pct",
+            "换手率": "turnover",
+        })
+
+        df["date"] = pd.to_datetime(df["date"])
+
+        return df[["date", "open", "close", "high", "low", "volume", "amount", "change_pct", "turnover"]]
+
+    except Exception as e:
+        console.print(f"[yellow]获取行业板块 {symbol} K线失败: {e}[/]")
+        return pd.DataFrame()
+
+
+def get_concept_board_history(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+) -> pd.DataFrame:
+    """获取概念板块历史K线数据
+
+    Args:
+        symbol: 板块代码或名称
+        start_date: 开始日期 YYYYMMDD
+        end_date: 结束日期 YYYYMMDD
+
+    Returns:
+        DataFrame: K线数据
+    """
+    import akshare as ak
+
+    try:
+        df = ak.stock_board_concept_hist_em(
+            symbol=symbol,
+            period="日k",
+            start_date=start_date,
+            end_date=end_date,
+            adjust="",
+        )
+
+        if df is None or df.empty:
+            return pd.DataFrame()
+
+        # 标准化列名
+        df = df.rename(columns={
+            "日期": "date",
+            "开盘": "open",
+            "收盘": "close",
+            "最高": "high",
+            "最低": "low",
+            "成交量": "volume",
+            "成交额": "amount",
+            "涨跌幅": "change_pct",
+            "换手率": "turnover",
+        })
+
+        df["date"] = pd.to_datetime(df["date"])
+
+        return df[["date", "open", "close", "high", "low", "volume", "amount", "change_pct", "turnover"]]
+
+    except Exception as e:
+        console.print(f"[yellow]获取概念板块 {symbol} K线失败: {e}[/]")
+        return pd.DataFrame()
+
+
+def sync_all_boards(
+    cache: CacheDB,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    board_type: str = "all",
+) -> dict:
+    """同步所有板块K线数据
+
+    Args:
+        cache: 缓存数据库实例
+        start_date: 开始日期，默认1年前
+        end_date: 结束日期，默认今天
+        board_type: 板块类型 ("industry"/"concept"/"all")
+
+    Returns:
+        同步结果统计
+    """
+    if start_date is None:
+        start_date = (datetime.now() - timedelta(days=365)).strftime("%Y%m%d")
+    if end_date is None:
+        end_date = datetime.now().strftime("%Y%m%d")
+
+    result = {
+        "industry": {"total": 0, "synced": 0, "failed": 0},
+        "concept": {"total": 0, "synced": 0, "failed": 0},
+    }
+
+    # 同步行业板块
+    if board_type in ("all", "industry"):
+        console.print("[cyan]同步行业板块列表...[/]")
+        try:
+            df = get_industry_board_list()
+            if not df.empty:
+                cache.save_board_info(df, "industry")
+                console.print(f"[green]  ✓ 保存 {len(df)} 个行业板块信息[/]")
+
+                # 同步K线数据
+                codes = df["板块代码"].tolist() if "板块代码" in df.columns else []
+                result["industry"]["total"] = len(codes)
+
+                # 检查已有数据
+                cached_codes = cache.get_boards_with_data(codes, start_date, end_date)
+                need_sync = [c for c in codes if c not in cached_codes]
+
+                if need_sync:
+                    console.print(f"[dim]  同步 {len(need_sync)} 个行业板块K线...[/]")
+
+                    for i, code in enumerate(need_sync):
+                        if i % 10 == 0:
+                            console.print(f"[dim]  进度: {i}/{len(need_sync)}...[/]")
+
+                        try:
+                            kline_df = get_industry_board_history(code, start_date, end_date)
+                            if not kline_df.empty:
+                                cache.save_board_data(code, kline_df)
+                                result["industry"]["synced"] += 1
+                            else:
+                                result["industry"]["failed"] += 1
+
+                            time.sleep(0.2)  # 限流
+
+                        except Exception:
+                            result["industry"]["failed"] += 1
+
+                console.print(f"[green]  ✓ 行业板块同步完成: {result['industry']['synced']}/{result['industry']['total']}[/]")
+
+        except Exception as e:
+            console.print(f"[red]  ✗ 同步行业板块失败: {e}[/]")
+
+    # 同步概念板块
+    if board_type in ("all", "concept"):
+        console.print("[cyan]同步概念板块列表...[/]")
+        try:
+            df = get_concept_board_list()
+            if not df.empty:
+                cache.save_board_info(df, "concept")
+                console.print(f"[green]  ✓ 保存 {len(df)} 个概念板块信息[/]")
+
+                # 同步K线数据
+                codes = df["板块代码"].tolist() if "板块代码" in df.columns else []
+                result["concept"]["total"] = len(codes)
+
+                # 检查已有数据
+                cached_codes = cache.get_boards_with_data(codes, start_date, end_date)
+                need_sync = [c for c in codes if c not in cached_codes]
+
+                if need_sync:
+                    console.print(f"[dim]  同步 {len(need_sync)} 个概念板块K线...[/]")
+
+                    for i, code in enumerate(need_sync):
+                        if i % 10 == 0:
+                            console.print(f"[dim]  进度: {i}/{len(need_sync)}...[/]")
+
+                        try:
+                            kline_df = get_concept_board_history(code, start_date, end_date)
+                            if not kline_df.empty:
+                                cache.save_board_data(code, kline_df)
+                                result["concept"]["synced"] += 1
+                            else:
+                                result["concept"]["failed"] += 1
+
+                            time.sleep(0.2)  # 限流
+
+                        except Exception:
+                            result["concept"]["failed"] += 1
+
+                console.print(f"[green]  ✓ 概念板块同步完成: {result['concept']['synced']}/{result['concept']['total']}[/]")
+
+        except Exception as e:
+            console.print(f"[red]  ✗ 同步概念板块失败: {e}[/]")
+
+    return result
