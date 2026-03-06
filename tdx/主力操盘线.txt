@@ -1,0 +1,30 @@
+{主力操盘线 V2.0 - 主图叠加指标}
+{操盘线≈EMA21，防守线≈EMA55，攻击线≈EMA8}
+
+{=== 操盘线：中期趋势线 ===}
+{DMA平滑，接近EMA21效果}
+操盘线:EMA(C,21),COLOR00AAFF,LINETHICK2;
+
+{=== 防守线：长期支撑线 ===}
+防守线:EMA(C,55),COLORCYAN,LINETHICK2;
+
+{=== 攻击线：短期突破线 ===}
+攻击线:EMA(C,8),COLORMAGENTA,LINETHICK2;
+
+{=== 信号 ===}
+V5:=MA(VOL,5);
+
+{突破攻击线：放量上穿}
+TPC:=CROSS(C,攻击线) AND VOL>V5*1.2;
+DRAWTEXT(TPC,LOW*0.98,'攻'),COLORMAGENTA;
+
+{跌破防守线}
+DPF:=CROSS(防守线,C) AND C<操盘线;
+DRAWTEXT(DPF,HIGH*1.02,'守'),COLORGREEN;
+
+{站上操盘线}
+ZS:=CROSS(C,操盘线) AND C>防守线;
+DRAWTEXT(ZS,LOW*0.98,'操'),COLOR00AAFF;
+
+{价笼空间}
+JL:=(攻击线-防守线)/防守线*100;
