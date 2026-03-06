@@ -512,6 +512,12 @@ def cmd_board(args: argparse.Namespace) -> None:
         start_date = args.start_date
         end_date = args.end_date
 
+        # 处理 --today 选项
+        if args.today:
+            start_date = datetime.now().strftime("%Y%m%d")
+            end_date = start_date
+            console.print("[cyan]仅同步今日数据[/]")
+
         result = sync_all_boards(cache, start_date, end_date, board_type)
 
         console.print("\n[bold green]同步完成[/]")
@@ -2631,6 +2637,7 @@ def main() -> None:
                                    help="板块类型: industry(行业), concept(概念), all(全部)")
     board_sync_parser.add_argument("--start-date", help="开始日期 YYYYMMDD，默认1年前")
     board_sync_parser.add_argument("--end-date", help="结束日期 YYYYMMDD，默认今天")
+    board_sync_parser.add_argument("--today", action="store_true", help="仅同步今日数据")
 
     # board show 子命令
     board_show_parser = board_subparsers.add_parser("show", help="显示板块K线")
