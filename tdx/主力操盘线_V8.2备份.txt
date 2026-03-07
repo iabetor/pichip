@@ -1,0 +1,45 @@
+{主力操盘线 V8.2 - 主图叠加指标}
+{EMA+趋势补偿：上涨时线偏高，下跌时线偏低}
+
+{=== 操盘线：EMA(30)+趋势偏移 ===}
+E30:=EMA(C,30);
+EE30:=EMA(E30,30);
+操盘线:E30+(E30-EE30)*0.38,COLOR00AAFF,LINETHICK2;
+
+{=== 防守线：EMA(75)+趋势偏移 ===}
+E75:=EMA(C,75);
+EE75:=EMA(E75,75);
+防守线:E75+(E75-EE75)*0.38,COLORCYAN,LINETHICK2;
+
+{=== 攻击线：EMA(8)+趋势偏移 ===}
+E8:=EMA(C,8);
+EE8:=EMA(E8,8);
+攻击线:E8+(E8-EE8)*0.35,COLORMAGENTA,LINETHICK2;
+
+{=== 排列状态 ===}
+多头:=攻击线>操盘线 AND 操盘线>防守线;
+空头:=攻击线<操盘线 AND 操盘线<防守线;
+
+{=== 信号 ===}
+V5:=MA(VOL,5);
+
+{买入信号：站上操盘线+多头排列形成}
+买入:=CROSS(C,操盘线) AND C>防守线 AND 攻击线>操盘线;
+DRAWTEXT(买入,LOW*0.97,'买'),COLORRED;
+DRAWICON(买入,LOW*0.96,1);
+
+{加仓信号：多头排列下放量突破攻击线}
+加仓:=CROSS(C,攻击线) AND 多头 AND VOL>V5*1.2;
+DRAWTEXT(加仓,LOW*0.97,'攻'),COLORMAGENTA;
+
+{警示信号：跌破操盘线}
+警示:=CROSS(操盘线,C) AND REF(C,1)>REF(操盘线,1);
+DRAWTEXT(警示,HIGH*1.02,'警'),COLORFF8800;
+
+{卖出信号：跌破防守线}
+卖出:=CROSS(防守线,C) AND C<操盘线;
+DRAWTEXT(卖出,HIGH*1.03,'卖'),COLORGREEN;
+DRAWICON(卖出,HIGH*1.04,2);
+
+{价笼空间：攻击线与防守线距离百分比}
+JL:=(攻击线-防守线)/防守线*100;

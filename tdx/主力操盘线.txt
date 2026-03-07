@@ -1,15 +1,20 @@
-{主力操盘线 V2.0 - 主图叠加指标}
-{操盘线≈EMA21，防守线≈EMA55，攻击线≈EMA8}
+{主力操盘线 V7.0 - 主图叠加指标}
+{EMA+趋势补偿：上涨时线偏高，下跌时线偏低}
 
-{=== 操盘线：中期趋势线 ===}
-{DMA平滑，接近EMA21效果}
-操盘线:EMA(C,21),COLOR00AAFF,LINETHICK2;
+{=== 操盘线：EMA(30)+趋势偏移 ===}
+E30:=EMA(C,30);
+EE30:=EMA(E30,30);
+操盘线:E30+(E30-EE30)*0.38,COLOR00AAFF,LINETHICK2;
 
-{=== 防守线：长期支撑线 ===}
-防守线:EMA(C,55),COLORCYAN,LINETHICK2;
+{=== 防守线：EMA(75)+趋势偏移 ===}
+E75:=EMA(C,75);
+EE75:=EMA(E75,75);
+防守线:E75+(E75-EE75)*0.38,COLORCYAN,LINETHICK2;
 
-{=== 攻击线：短期突破线 ===}
-攻击线:EMA(C,8),COLORMAGENTA,LINETHICK2;
+{=== 攻击线：EMA(8)+趋势偏移 ===}
+E8:=EMA(C,8);
+EE8:=EMA(E8,8);
+攻击线:E8+(E8-EE8)*0.35,COLORMAGENTA,LINETHICK2;
 
 {=== 信号 ===}
 V5:=MA(VOL,5);
